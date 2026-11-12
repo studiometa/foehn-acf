@@ -1,6 +1,6 @@
 ---
 name: foehn-acf
-description: 'Build ACF blocks, ACF field groups and ACF options pages in a Føhn theme with studiometa/foehn-acf. Load it when code uses #[AsAcfBlock], #[AsAcfFieldGroup], #[AsAcfOptionsPage], AcfBlockInterface, AcfFieldGroupInterface, AcfOptionsPageInterface, StoutLogic\AcfBuilder\FieldsBuilder, AcfOptionsService, AcfConfig, the field fragments (ButtonLinkBuilder, ResponsiveImageBuilder, SpacingBuilder, BackgroundBuilder), or the wp foehn make:acf-block, make:field-group and make:options-page commands.'
+description: 'Build ACF blocks, ACF field groups and ACF options pages in a Føhn theme with studiometa/foehn-acf. Load it when code uses #[AsAcfBlock], #[AsAcfFieldGroup], #[AsAcfOptionsPage], AcfBlockInterface, AcfFieldGroupInterface, AcfOptionsPageInterface, StoutLogic\AcfBuilder\FieldsBuilder, AcfOptionsService, AcfConfig, the field fragments (ButtonLinkBuilder, ResponsiveImageBuilder, SpacingBuilder, BackgroundBuilder), or the wp foehn-acf make:acf-block, make:field-group and make:options-page commands.'
 ---
 
 # Føhn ACF
@@ -278,17 +278,21 @@ Conditional logic inside a fragment keeps working in a group. Constructor option
 
 ## Scaffolding commands
 
-Run them with WP-CLI. Each accepts `--force` and `--dry-run`. Files go in the theme's `app/` directory, and the namespace comes from the theme's PSR-4 map.
+Run them with WP-CLI. Each accepts `--force`, `--dry-run` and `--format=json`, never prompts, and exits with status 1 when the file exists without `--force`. When `wp_get_environment_type()` is `production`, it also refuses to run without `--force` or `--dry-run`. Files go in the theme's `app/` directory, and the namespace comes from the theme's PSR-4 map.
+
+Run a command with `--dry-run --format=json` first: it writes nothing and prints the `path`, `status` and `contents` of the file it would write. Then run it without `--dry-run`, and do what its `notes` say.
+
+`wp foehn inspect` does not report ACF blocks, field groups or options pages. To see which ones Føhn found, run `wp foehn discovery:list --discovery=AcfBlock` (or `AcfFieldGroup`, `AcfOptionsPage`) with `--format=json`.
 
 ```bash
-wp foehn make:acf-block hero --title="Hero Banner" --fields=wysiwyg,image,cta   # app/Blocks/HeroBlock.php
-wp foehn make:acf-block contact-form --mode=edit --category=design --class=ContactBlock
-wp foehn make:field-group ProductFields --post-type=product                     # app/Fields/PostType/
-wp foehn make:field-group FrontPageFields --page-template=front-page             # app/Fields/Page/
-wp foehn make:field-group CategoryFields --taxonomy=category                    # app/Fields/Taxonomy/
-wp foehn make:field-group SharedFields                                          # app/Fields/, location post_type == post
-wp foehn make:options-page ThemeSettings --menu-title=Theme --icon=dashicons-admin-generic
-wp foehn make:options-page FooterSettings --parent=theme-settings              # app/Fields/Options/
+wp foehn-acf make:acf-block hero --title="Hero Banner" --fields=wysiwyg,image,cta   # app/Blocks/HeroBlock.php
+wp foehn-acf make:acf-block contact-form --mode=edit --category=design --class=ContactBlock
+wp foehn-acf make:field-group ProductFields --post-type=product                     # app/Fields/PostType/
+wp foehn-acf make:field-group FrontPageFields --page-template=front-page             # app/Fields/Page/
+wp foehn-acf make:field-group CategoryFields --taxonomy=category                    # app/Fields/Taxonomy/
+wp foehn-acf make:field-group SharedFields                                          # app/Fields/, location post_type == post
+wp foehn-acf make:options-page ThemeSettings --menu-title=Theme --icon=dashicons-admin-generic
+wp foehn-acf make:options-page FooterSettings --parent=theme-settings              # app/Fields/Options/
 ```
 
 `--fields` shortcuts for `make:acf-block`: `text`, `wysiwyg`, `image`, `gallery`, `url`, `cta`, `select`, `repeater`. The generated files need edits before they work; see the gotchas.
@@ -299,7 +303,7 @@ wp foehn make:options-page FooterSettings --parent=theme-settings              #
 - **The generated options page has no fields.** `make:options-page` writes a class without `implements AcfOptionsPageInterface`, and the discovery registers `fields()` only for classes that implement it. Add the interface. The generated `get()` helper reads `get_field($key, 'option')`, which does not match the default post ID (the menu slug): change it, or set `postId: 'options'`.
 - **`fields()` is static.** A non-static `fields()` breaks the interface and the registration.
 - **`fields()` returns the root builder.** In acf-builder, every `addText()`, `addImage()`, `addTab()` and similar call returns the new field (a `FieldBuilder`), not the root `FieldsBuilder`. `addRepeater()`, `addGroup()`, `addFlexibleContent()` and `conditional()` also return nested builders. A `return new FieldsBuilder(...)->...` chain is correct only when its last call is `endRepeater()`, `endGroup()` or `endFlexibleContent()`. A chain that ends on `->addUrl(...)` or `->conditional(...)` causes a `TypeError`. Assign the builder to `$builder`, chain on it, and `return $builder;`.
-- **The interfaces are required for blocks and field groups.** A class with `#[AsAcfBlock]` that does not implement `AcfBlockInterface`, or `#[AsAcfFieldGroup]` without `AcfFieldGroupInterface`, throws an `InvalidArgumentException` during discovery.
+- **The interfaces are required for blocks and field groups.** A class with `#[AsAcfBlock]` that does not implement `AcfBlockInterface`, or `#[AsAcfFieldGroup]` without `AcfFieldGroupInterface`, is skipped: it is not registered, and `wp foehn inspect problems` gives the reason and the fix.
 - **`location` must not be empty** on a field group. The first rule is required.
 - **Reserved context keys.** `block`, `block_id`, `block_name`, `block_class`, `is_preview`, `align` and `anchor` replace keys with the same name from `compose()`. Use other names for your data.
 - **Field keys are unique.** The `FieldsBuilder` name (`new FieldsBuilder('hero')`) gives the ACF group and field keys. Two classes with the same builder name collide. The `name` argument of `#[AsAcfFieldGroup]` does not change these keys.

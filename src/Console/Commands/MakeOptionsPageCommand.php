@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Studiometa\Foehn\Console\Commands;
 
 use Studiometa\Foehn\Attributes\AsCliCommand;
-use Studiometa\Foehn\Console\ClassFileGenerator;
 use Studiometa\Foehn\Console\CliCommandInterface;
 use Studiometa\Foehn\Console\GenerationRequest;
+use Studiometa\Foehn\Console\Scaffolder;
 use Studiometa\Foehn\Console\Stubs\OptionsPageStub;
 use Studiometa\Foehn\Console\WpCli;
 
@@ -32,30 +32,33 @@ use function Tempest\Support\str;
     : Dashicon class for top-level menu (defaults to 'dashicons-admin-generic')
 
     [--force]
-    : Overwrite existing file
+    : Overwrite an existing file. Also lets the command run in the production environment
 
     [--dry-run]
-    : Show what would be created without creating
+    : Write nothing. Show the file that would be written, or report that it exists
+
+    [--format=<format>]
+    : Output format. text (default) or json. json prints the written files, their status and the next steps
 
     ## EXAMPLES
 
         # Create a top-level options page
-        wp foehn make:options-page ThemeSettings
+        wp foehn-acf make:options-page ThemeSettings
 
         # Create a submenu options page
-        wp foehn make:options-page FooterSettings --parent=theme-settings
+        wp foehn-acf make:options-page FooterSettings --parent=theme-settings
 
         # Create with custom icon
-        wp foehn make:options-page SocialSettings --icon=dashicons-share
+        wp foehn-acf make:options-page SocialSettings --icon=dashicons-share
 
         # Preview what would be created
-        wp foehn make:options-page ThemeSettings --dry-run
-    DOC)]
+        wp foehn-acf make:options-page ThemeSettings --dry-run
+    DOC, writes: true)]
 final class MakeOptionsPageCommand implements CliCommandInterface
 {
     public function __construct(
         private readonly WpCli $cli,
-        private readonly ClassFileGenerator $generator,
+        private readonly Scaffolder $scaffolder,
     ) {}
 
     public function __invoke(array $args, array $assocArgs): void
@@ -74,47 +77,31 @@ final class MakeOptionsPageCommand implements CliCommandInterface
         $menuTitle = $assocArgs['menu-title'] ?? $title;
         $parent = $assocArgs['parent'] ?? '';
         $icon = $assocArgs['icon'] ?? 'dashicons-admin-generic';
-        $force = ($assocArgs['force'] ?? null) !== null;
-        $dryRun = ($assocArgs['dry-run'] ?? null) !== null;
 
-        $file = $this->generator->generate(new GenerationRequest(
-            stub: OptionsPageStub::class,
-            subdirectory: 'Fields/Options',
-            className: $className,
-            attributeArguments: [
-                'pageTitle' => $title,
-                'menuTitle' => $menuTitle,
-                'menuSlug' => $slug,
-                // An empty parent means a top level page, which ACF expects as null
-                'parentSlug' => $parent === '' ? null : $parent,
-                'iconUrl' => $icon,
+        $this->scaffolder->scaffold(
+            new GenerationRequest(
+                stub: OptionsPageStub::class,
+                subdirectory: 'Fields/Options',
+                className: $className,
+                attributeArguments: [
+                    'pageTitle' => $title,
+                    'menuTitle' => $menuTitle,
+                    'menuSlug' => $slug,
+                    // An empty parent means a top level page, which ACF expects as null
+                    'parentSlug' => $parent === '' ? null : $parent,
+                    'iconUrl' => $icon,
+                ],
+                // The builder is seeded with the option group name inside fields()
+                bodyReplacements: [
+                    'fields' => ["'dummy_options'" => "'" . str($name)->snake()->toString() . "'"],
+                ],
+            ),
+            $assocArgs,
+            'Options page created',
+            [
+                'Define the ACF fields in fields() with FieldsBuilder.',
+                "Read an option in Twig with {{ fn('get_field', 'field_name', 'option') }}, or in PHP with {$className}::get('field_name').",
             ],
-            // The builder is seeded with the option group name inside fields()
-            bodyReplacements: [
-                'fields' => ["'dummy_options'" => "'" . str($name)->snake()->toString() . "'"],
-            ],
-        ));
-
-        if ($dryRun) {
-            $this->cli->previewGeneratedFile($file);
-
-            return;
-        }
-
-        if (!$this->generator->write($file, $force)) {
-            $this->cli->reportFileExists($file);
-
-            return;
-        }
-
-        $this->cli->success("Options page created: {$this->cli->getRelativePath($file->path)}");
-        $this->cli->line('');
-        $this->cli->log('Edit the fields() method to define your ACF fields using FieldsBuilder.');
-        $this->cli->line('');
-        $this->cli->log('Access options in templates with:');
-        $this->cli->log("  {{ fn('get_field', 'field_name', 'option') }}");
-        $this->cli->log('');
-        $this->cli->log('Or use the static helper:');
-        $this->cli->log("  {$className}::get('field_name')");
+        );
     }
 }
